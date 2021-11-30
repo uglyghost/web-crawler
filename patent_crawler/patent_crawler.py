@@ -4,6 +4,34 @@ from selenium import webdriver
 import time
 from pymongo import MongoClient
 from pandas import json_normalize
+import numpy
+
+
+def find_all_data(element):
+    dat = []
+    lst = []
+    # 找到所有table下面所有的tr
+    try:
+        # element = element.find_element_by_css_selector("[class='tbody style-scope patent-result']")
+        tr_contents = element.find_elements_by_css_selector("[class='tr style-scope patent-result']")
+        for tr in tr_contents:
+            # 遍历查找每个tr下面的td
+            content_list1 = tr.find_elements_by_css_selector("[class='td nowrap style-scope patent-result']")
+            for td in content_list1:
+                # 将每个td的内容存储到lst中
+                lst.append(td.text)
+            content_list2 = tr.find_elements_by_css_selector("[class='td style-scope patent-result']")
+            for td in content_list2:
+                # 将每个td的内容存储到lst中
+                lst.append(td.text)
+            if len(lst) != 0:
+                dat.append(lst)
+            lst = []
+    except:
+        dat = ''
+
+    return dat
+
 
 # web交互式查询函数，
 # input   查询条件keyword
@@ -12,7 +40,8 @@ def search(keyword):
     # 初始化chrome驱动配置
     chrome_options = webdriver.ChromeOptions()
     # 让浏览器不显示自动化测试
-    chrome_options.add_argument("--lang=zh-CN")
+    chrome_options.add_argument("-–lang=zh-CN")
+    # chrome_options.add_argument("--headless")
     # 设置window系统下的chrome驱动程序
     chromedriver = webdriver.Chrome(executable_path='./driver/chromedriver.exe', options=chrome_options)
 
@@ -21,20 +50,23 @@ def search(keyword):
 
     # 输入查询并查找
     username_field = chromedriver.find_element_by_xpath('//*[@id="searchInput"]')
-    time.sleep(5)
+    time.sleep(3)
     username_field.send_keys(keyword)
     time.sleep(3)
 
     # 点击查询按钮并获取详情页
-    chromedriver.find_element_by_xpath('//*[@id="searchButton"]/iron-icon').click()  # 再次点击登陆
+    chromedriver.find_element_by_xpath('//*[@id="searchButton"]/iron-icon').click()
+    time.sleep(3)
+    url = chromedriver.current_url
+    chromedriver.get(url+'&language=CHINESE')
     time.sleep(3)
     chromedriver.find_element_by_xpath('//*[@id="htmlContent"]').click()
     time.sleep(3)
 
     return chromedriver
 
-def getData(chromedriver):
 
+def getData(chromedriver):
     # 尝试逐个获取数据
     # 专利编号
     try:
@@ -51,7 +83,7 @@ def getData(chromedriver):
         except:
             break
     try:
-        if(dataList[0]=='Chinese'):
+        if (dataList[0] == 'Chinese'):
             # 公司名称
             companyName = dataList[-1]
             # 专利发明人
@@ -63,35 +95,11 @@ def getData(chromedriver):
         companyName = ''
         Inventor = ''
 
-    # 专利分类
-    try:
-        classifications = chromedriver.find_element_by_xpath('//*[@id="target"]').text
-    except:
-        classifications = ''
-
     # 专利摘要
     try:
         abstract = chromedriver.find_element_by_xpath('//*[@id="text"]/abstract/div').text
     except:
         abstract = ''
-
-    # 专利事件
-    try:
-        events = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[1]/div[2]/section/application-timeline/div').text
-    except:
-        events = ''
-
-    # 专利引用
-    try:
-        PatentCitations = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[1]/div').text
-    except:
-        PatentCitations = ''
-
-    # 专利被引
-    try:
-        CitedBy = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[3]/div').text
-    except:
-        CitedBy = ''
 
     # 专利要求
     try:
@@ -104,6 +112,33 @@ def getData(chromedriver):
         Description = chromedriver.find_element_by_xpath('//*[@id="descriptionText"]/div').text
     except:
         Description = ''
+
+    # 数组数据需要分页查找
+    element_head_list = chromedriver.find_elements_by_css_selector("[class='thead style-scope patent-result']")
+    element_list = chromedriver.find_elements_by_css_selector("[class='tbody style-scope patent-result']")
+
+    events = ''
+    concepts = ''
+    applications = ''
+    similar = ''
+    PatentCitations = ''
+    CitedBy = ''
+    for index, element_head in enumerate(element_head_list):
+        tmpElement = element_head.find_element_by_css_selector("[class='th style-scope patent-result']").text
+        if tmpElement == 'Date':
+            events = find_all_data(element_list[index])
+        elif tmpElement == 'Name':
+            concepts = find_all_data(element_list[index])
+        elif tmpElement == 'Application':
+            applications = find_all_data(element_list[index])
+        elif tmpElement == 'Publication':
+            similar = find_all_data(element_list[index])
+
+        if tmpElement == 'Publication number':
+            if index == 1:
+                PatentCitations = find_all_data(element_list[index])
+            else:
+                CitedBy = find_all_data(element_list[index])
 
     '''
     try:
@@ -132,8 +167,10 @@ def getData(chromedriver):
         'company': companyName,
         "Inventor": Inventor,
         'events': events,
-        "classifications": classifications,
+        "concepts": concepts,
         "PatentCitations": PatentCitations,
+        "applications":applications,
+        "similar":similar,
         "CitedBy": CitedBy,
         "claims": claims,
         "Description": Description
@@ -167,7 +204,6 @@ def saveData(oneData):
     return result
 
 
-
 if __name__ == '__main__':
 
     # 组成查询条件
@@ -183,6 +219,7 @@ if __name__ == '__main__':
     while 1:
         oneData = getData(chromedriver)
         saveData(oneData)
+        time.sleep(1)
 
         # 跳转到下个专利界面
         chromedriver.find_element_by_xpath('//*[@id="nextResult"]').click()
