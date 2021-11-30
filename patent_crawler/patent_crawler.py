@@ -2,40 +2,120 @@
 from bs4 import BeautifulSoup
 from selenium import webdriver
 import time
-from xml.dom.minidom import Document, parse
+from pymongo import MongoClient
+from pandas import json_normalize
 
-
+# web交互式查询函数，
+# input   查询条件keyword
+# return  chrome web driver
 def search(keyword):
-    driver = webdriver.Chrome()
-    driver.get("https://patents.glgoo.top/")
+    # 初始化chrome驱动配置
+    chrome_options = webdriver.ChromeOptions()
+    # 让浏览器不显示自动化测试
+    chrome_options.add_argument("--lang=zh-CN")
+    # 设置window系统下的chrome驱动程序
+    chromedriver = webdriver.Chrome(executable_path='./driver/chromedriver.exe', options=chrome_options)
 
+    chromedriver.get("https://patents.google.com/")
+    time.sleep(3)
+
+    # 输入查询并查找
+    username_field = chromedriver.find_element_by_xpath('//*[@id="searchInput"]')
     time.sleep(5)
-    username_field = driver.find_element_by_xpath('//*[@id="searchInput"]')
-
     username_field.send_keys(keyword)
-    time.sleep(6)
+    time.sleep(3)
 
-    driver.find_element_by_xpath('//*[@id="searchButton"]/iron-icon').click()  # 再次点击登陆
-    time.sleep(5)
-    return driver
+    # 点击查询按钮并获取详情页
+    chromedriver.find_element_by_xpath('//*[@id="searchButton"]/iron-icon').click()  # 再次点击登陆
+    time.sleep(3)
+    chromedriver.find_element_by_xpath('//*[@id="htmlContent"]').click()
+    time.sleep(3)
 
+    return chromedriver
 
-def get():
+def getData(chromedriver):
+
+    # 尝试逐个获取数据
+    # 专利编号
     try:
-        data = driver.page_source
-        soup2 = BeautifulSoup(data, 'html.parser')
-        grades = soup2.find('div', {'class': 'style-scope classification-tree'})
-        a = grades.find_all('span', {'class': 'description style-scope classification-tree'})
-        b = grades.find_all('a', {'class': 'style-scope state-modifier'})
+        id = chromedriver.find_element_by_xpath('//*[@id="pubnum"]').text
+    except:
+        id = ''
+
+    dataList = []
+    xpath = '/html/body/search-app/search-result/search-ui/div/div/div/div/div/result-container/patent-result/div/div/div/div[1]/div[2]/section/dl[1]//dd['
+    for num in range(1, 999):
+        XpathRe = xpath + str(num) + ']'
+        try:
+            dataList.append(chromedriver.find_element_by_xpath(XpathRe).text)
+        except:
+            break
+    try:
+        if(dataList[0]=='Chinese'):
+            # 公司名称
+            companyName = dataList[-1]
+            # 专利发明人
+            Inventor = dataList[1:-1]
+        else:
+            companyName = ''
+            Inventor = ''
+    except:
+        companyName = ''
+        Inventor = ''
+
+    # 专利分类
+    try:
+        classifications = chromedriver.find_element_by_xpath('//*[@id="target"]').text
+    except:
+        classifications = ''
+
+    # 专利摘要
+    try:
+        abstract = chromedriver.find_element_by_xpath('//*[@id="text"]/abstract/div').text
+    except:
+        abstract = ''
+
+    # 专利事件
+    try:
+        events = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[1]/div[2]/section/application-timeline/div').text
+    except:
+        events = ''
+
+    # 专利引用
+    try:
+        PatentCitations = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[1]/div').text
+    except:
+        PatentCitations = ''
+
+    # 专利被引
+    try:
+        CitedBy = chromedriver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[3]/div').text
+    except:
+        CitedBy = ''
+
+    # 专利要求
+    try:
+        claims = chromedriver.find_element_by_xpath('//*[@id="claims"]/patent-text/div').text
+    except:
+        claims = ''
+
+    # 专利介绍
+    try:
+        Description = chromedriver.find_element_by_xpath('//*[@id="descriptionText"]/div').text
+    except:
+        Description = ''
+
+    '''
+    try:
+        # 尝试获取数据
         classifications_cont1 = a[-1].text
         classifications_num1 = b[-1].text
 
-
-        abstract1 = driver.find_element_by_xpath('//*[@id="text"]/abstract/div').text  # abstract
-        PatentCitations1 = driver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[1]/div').text  # Patent Citations
-        CitedBy1 = driver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[3]/div').text  # Cited By
-        claims1 = driver.find_element_by_xpath('//*[@id="claims"]/patent-text/div').text  # claims
-        Description1 = driver.find_element_by_xpath('//*[@id="descriptionText"]/div').text  # Description
+        abstract1 = driver.find_element_by_xpath('//*[@id="text"]/abstract/div').text                 # 专利摘要
+        PatentCitations1 = driver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[1]/div').text  # 专利引用
+        CitedBy1 = driver.find_element_by_xpath('//*[@id="wrapper"]/div[3]/div[3]/div').text          # 专利被引
+        claims1 = driver.find_element_by_xpath('//*[@id="claims"]/patent-text/div').text              # 专利要求
+        Description1 = driver.find_element_by_xpath('//*[@id="descriptionText"]/div').text            # 专利介绍
     except:
         abstract1 = '未找到'
         classifications_num1 = '未找到'
@@ -44,73 +124,66 @@ def get():
         CitedBy1 = '未找到'
         claims1 = '未找到'
         Description1 = '未找到'
+    '''
 
-    return abstract1, classifications_num1, classifications_cont1, PatentCitations1, CitedBy1, claims1, Description1
+    dataJson = {
+        'id': id,
+        'abstract': abstract,
+        'company': companyName,
+        "Inventor": Inventor,
+        'events': events,
+        "classifications": classifications,
+        "PatentCitations": PatentCitations,
+        "CitedBy": CitedBy,
+        "claims": claims,
+        "Description": Description
+    }
+
+    return dataJson
 
 
-def save():
-    rootNode = domTree.documentElement
-    item = domTree.createElement('item')
-    rootNode.appendChild(item)
+def saveData(oneData):
+    # 连接服务器
+    client = MongoClient('localhost', 27017)
+    mongodb = client.patent
 
-    abstract = doc.createElement('abstract')
-    abstract_text = doc.createTextNode(get()[0])  # abstract1) #元素内容写入
-    abstract.appendChild(abstract_text)
-    item.appendChild(abstract)
+    # 插入数据到数据库
+    tmp_df = json_normalize(oneData)
+    print(tmp_df)
+    query = {"id": tmp_df['id'][0]}
 
-    classification = doc.createElement('classification')
-    item.appendChild(classification)
+    # 重复检查，看是否存在数据
+    count = mongodb['patent_list'].count_documents(query)
+    tmp_dict = tmp_df.to_dict('records')
+    # print(tmp_dict)
 
-    classification_cont = doc.createElement('classification_cont')
-    classification_num = doc.createElement('classification_num')
-    classification_cont_text = doc.createTextNode(get()[2])  # classifications_cont1)
-    classification_nume_text = doc.createTextNode(get()[1])  # classifications_num1)
-    classification.appendChild(classification_cont)
-    classification.appendChild(classification_num)
-    classification_cont.appendChild(classification_cont_text)
-    classification_num.appendChild(classification_nume_text)
-    item.appendChild(classification)
+    if count == 0:
+        # 不存在，添加
+        result = mongodb['patent_list'].insert_one(tmp_dict[0])
+    else:
+        # 已存在，更新
+        result = mongodb['patent_list'].update_one(query, {'$set': tmp_dict[0]})
 
-    PatentCitations = doc.createElement('PatentCitations')
-    PatentCitations_text = doc.createTextNode(get()[3])  # PatentCitations1) #元素内容写入
-    PatentCitations.appendChild(PatentCitations_text)
-    item.appendChild(PatentCitations)
+    return result
 
-    CitedBy = doc.createElement('CitedBy')
-    CitedBy_text = doc.createTextNode(get()[4])  # CitedBy1) #元素内容写入
-    CitedBy.appendChild(CitedBy_text)
-    item.appendChild(CitedBy)
-
-    Claims = doc.createElement('Claims')
-    Claims_text = doc.createTextNode(get()[5])  # claims1) #元素内容写入
-    Claims.appendChild(Claims_text)
-    item.appendChild(Claims)
-
-    Description = doc.createElement('Description')
-    Description_text = doc.createTextNode(get()[6])  # Description1) #元素内容写入
-    Description.appendChild(Description_text)
-    item.appendChild(Description)
-
-    f = open('a.xml', 'w', encoding='utf-8')
-    domTree.writexml(f, indent='\t', newl='\n', addindent='\t', encoding='utf-8')
 
 
 if __name__ == '__main__':
-    keyword = '文化'
-    driver = search(keyword)
-    driver.find_element_by_xpath('//*[@id="htmlContent"]').click()
-    time.sleep(3)
 
-    doc = Document()  # 创建DOM文档对象
-    DOCUMENT = doc.createElement('Pantents')  # 创建根元素
-    # DOCUMENT.setAttribute('content_method',"full")#设置命名空间
-    doc.appendChild(DOCUMENT)
-    f = open('a.xml', 'w', encoding='utf-8')
-    doc.writexml(f, indent='\t', newl='\n', addindent='\t', encoding='utf-8')
-    f.close()
-    domTree = parse("a.xml")
-    for i in range(50):
-        get()
-        save()
-        driver.find_element_by_xpath('//*[@id="nextResult"]').click()
-        driver.get(driver.current_url)
+    # 组成查询条件
+    startDate = '20210201'
+    endDate = '20210203'
+    keyword = 'before:priority:' + endDate + ' ' + 'after:priority:' + startDate
+    # 'before:priority:20211212 after:priority:20210101'
+
+    # 启动chrome driver查找数据
+    chromedriver = search(keyword)
+
+    # 循环查找直至结束
+    while 1:
+        oneData = getData(chromedriver)
+        saveData(oneData)
+
+        # 跳转到下个专利界面
+        chromedriver.find_element_by_xpath('//*[@id="nextResult"]').click()
+        chromedriver.get(chromedriver.current_url)
