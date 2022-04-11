@@ -6,7 +6,9 @@ from pymongo import MongoClient
 import csv
 import datetime
 import re
+from ws_datetime import Date
 from bson import ObjectId
+import random
 
 # 设置参数
 filePath = 'H:\\web-crawler1\\patent_data\\'
@@ -14,7 +16,7 @@ filePath = 'H:\\web-crawler1\\patent_data\\'
 # 连接服务器
 user = 'wenshu'
 pwd = '123456'
-host = '10.220.139.140'
+host = '10.220.139.141'
 port = '27017'
 db_name = 'wenshu'
 
@@ -39,6 +41,8 @@ prefs = {'profile.default_content_settings.popups': 0, 'download.default_directo
 chrome_options.add_experimental_option('prefs', prefs)
 # 设置window系统下的chrome驱动程序
 chromedriver = webdriver.Chrome(executable_path='./driver/chromedriver.exe', options=chrome_options)
+cookies = {'value': '=205=QrIgq6taS0vVrGF-ip1jLrhJFtGyfFNF4kZxSNv7yLb78aIQz2_oslAhUcBePAuL1L1tt5Zuab6DlE580VgTsWMkHvukLJ_2fHaNeI98W9TgB8ZvbUcyJ7DcD8s3QShYqwwtFHHFhWRi-jMtU8azklbXunUwVimHAlWHS6r-x7ISmGehd_fbzxYoh0ZY7mWPRyiTDzCLoEKv44ZsUOjp5yh5DxBpsMqeM94Bek23St7uLrGO58vZyibfT1vkRu3fBI1Cu84Oj7uszw',
+           'name': 'NID'}
 
 
 # web交互式查询函数，
@@ -49,7 +53,8 @@ def search(url):
     flag = False  # 是否找到专利 1: 找到  0: 未找到
 
     try:
-        chromedriver.get(url)
+        chromedriver.get(url=url)
+        chromedriver.add_cookie(cookie_dict=cookies)
         time.sleep(3)
 
         try:
@@ -62,11 +67,12 @@ def search(url):
             return flag
 
         chromedriver.find_element_by_xpath('//*[@id="count"]/div[1]/span[2]/a').click()
+        time.sleep(random.randint(55, 65))
         dl_wait = True
         while dl_wait:
-            time.sleep(1)
+            time.sleep(random.randint(1, 3))
             for fname in os.listdir(filePath):
-                if fname.endswith('.csv'):
+                if fname.endswith('.csv') or fname.endswith('.crdownload'):
                     dl_wait = False
 
         flag = True
@@ -130,9 +136,16 @@ def saveData(newDirPath):
     return patentNum
 
 
+def next_month(dateTime):
+
+    start = Date.str_to_date(dateTime)
+    next = start + datetime.timedelta(days=-2)
+
+    return next.strftime('%Y%m%d')
+
 if __name__ == '__main__':
     # 组成查询条件
-
+    '''
     collection = mongodb['name_list']
     tmp = mongodb['tmp']
 
@@ -141,16 +154,20 @@ if __name__ == '__main__':
     processNum = index['num']
 
     allcompany = collection.find().skip(index['num'])
+    '''
+    comName = '专利'
 
-    for name_tmp in allcompany:
-        comName = name_tmp['company_name']
+    endData = '20220214'
 
-        # print('开始查找公司：{0}'.format(comName))
+    startData = next_month(endData)
 
-        url = 'https://patents.google.com/?assignee=' + comName + '&language=CHINESE'
+    while 1:
+        url = 'https://patents.google.com/?before=priority:' + endData + '&after=priority:' + startData + '&language=CHINESE&type=PATENT'
 
         # 查找到制定网页
-        Flag = search(url)
+        # Flag = search(url)
+        Flag = True
+
         if Flag:
             newDirPath = renameCSV(comName)
 
@@ -158,7 +175,7 @@ if __name__ == '__main__':
         else:
             patentNum = 0
 
-        print('{0}公司找到{1}个专利'.format(comName, patentNum))
+        print('{0}找到{1}个专利'.format(startData, patentNum))
 
-        processNum += 1
-        tmp.update_one(query, {'$set': {"num": processNum}})
+        endData = startData
+        startData = next_month(startData)
